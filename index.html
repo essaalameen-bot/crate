@@ -447,6 +447,7 @@ const $$=s=>Array.from(document.querySelectorAll(s));
 const E='cubic-bezier(.22,1,.36,1)';
 const API='https://api.spotify.com/v1';
 const TOKEN_URL='https://accounts.spotify.com/api/token';
+const BUILD='20261126181110';
 const BASE=location.pathname.replace(/[^/]*$/,'');const REDIRECT=location.origin+BASE;
 const SCOPES='user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played user-library-read playlist-read-private streaming user-read-email user-read-private';
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -969,7 +970,21 @@ function wire(){
   spin=$('#disc').animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:4200,iterations:Infinity});spin.playbackRate=0;
 }
 
+
+/* ---------- auto-update: load the newest version as soon as one is published ---------- */
+async function checkUpdate(){
+  if(BUILD.indexOf('__')===0)return;
+  try{
+    const r=await fetch(BASE+'?check='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+    const m=(await r.text()).match(/const BUILD='([^']+)'/);
+    if(!m||m[1]===BUILD||m[1].indexOf('__')===0)return;
+    let tries=0;try{tries=+sessionStorage.getItem('crate_upd_'+m[1])||0;sessionStorage.setItem('crate_upd_'+m[1],tries+1)}catch(e){}
+    if(tries<2)location.replace(BASE+'?v='+m[1]);
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUpdate()});
 async function init(){
+  checkUpdate();
   // iOS home-screen apps can report a viewport shorter than the screen; use the full screen height there
   const fitH=()=>{if(navigator.standalone||matchMedia('(display-mode: standalone)').matches){const portrait=window.innerHeight>=window.innerWidth;const full=portrait?Math.max(screen.height,screen.width):Math.min(screen.height,screen.width);document.documentElement.style.setProperty('--appH',Math.max(window.innerHeight,full)+'px')}};
   fitH();window.addEventListener('resize',fitH);window.addEventListener('orientationchange',()=>setTimeout(fitH,300));
