@@ -126,6 +126,10 @@ body:not(.video-off) #app .btn.solid{color:#111}
 /* sheets */
 .sheet{position:fixed;left:0;right:0;top:calc(var(--st) + 10px);height:calc(var(--appH,100lvh) - var(--st) - 10px);z-index:5;max-width:520px;margin:0 auto;background:var(--sheet);color:var(--ink);border-radius:18px 18px 0 0;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .6s var(--E);box-shadow:0 -10px 40px rgba(0,0,0,.25)}
 .sheet.open{transform:none}
+.sheet{visibility:hidden;transition:transform .6s var(--E),visibility 0s .6s}
+.sheet.open{visibility:visible;transition:transform .6s var(--E),visibility 0s}
+.sheet:not(.side){transform:translateY(calc(100% + 160px))}
+.sheet:not(.side).open{transform:none}
 .sheet.side{top:0;height:var(--appH,100lvh);border-radius:0;transform:translateX(105%)}
 .sheet.side.open{transform:none}
 #album{background:var(--sheet)}
@@ -447,7 +451,7 @@ const $$=s=>Array.from(document.querySelectorAll(s));
 const E='cubic-bezier(.22,1,.36,1)';
 const API='https://api.spotify.com/v1';
 const TOKEN_URL='https://accounts.spotify.com/api/token';
-const BUILD='20261126181110';
+const BUILD='20261126181354';
 const BASE=location.pathname.replace(/[^/]*$/,'');const REDIRECT=location.origin+BASE;
 const SCOPES='user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played user-library-read playlist-read-private streaming user-read-email user-read-private';
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
