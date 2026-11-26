@@ -469,7 +469,7 @@ const $$=s=>Array.from(document.querySelectorAll(s));
 const E='cubic-bezier(.22,1,.36,1)';
 const API='https://api.spotify.com/v1';
 const TOKEN_URL='https://accounts.spotify.com/api/token';
-const BUILD='20261126181838';
+const BUILD='20261126181942';
 const BASE=location.pathname.replace(/[^/]*$/,'');const REDIRECT=location.origin+BASE;
 const SCOPES='user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played user-library-read playlist-read-private streaming user-read-email user-read-private';
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -558,7 +558,8 @@ async function api(path,o){
   const headers={Authorization:'Bearer '+tk};if(o.body)headers['Content-Type']='application/json';
   const r=await fetch(url,{method,headers,body:o.body?JSON.stringify(o.body):undefined});
   if(r.status===401&&!o.retried){await refresh();return api(path,Object.assign({},o,{retried:true}))}
-  if(r.status===429&&!o.retried){await sleep((+r.headers.get('Retry-After')||1)*1000);return api(path,Object.assign({},o,{retried:true}))}
+  if(r.status===429&&(o.tries||0)<2){await sleep(Math.min(5,(+r.headers.get('Retry-After')||1))*1000);return api(path,Object.assign({},o,{tries:(o.tries||0)+1}))}
+  if(r.status>=500&&(o.tries||0)<3&&method==='GET'){await sleep(400*Math.pow(2,o.tries||0));return api(path,Object.assign({},o,{tries:(o.tries||0)+1}))}
   if(r.status===204||r.status===202)return null;
   const txt=await r.text();let j=null;try{j=txt?JSON.parse(txt):null}catch(e){}
   if(!r.ok){const e=new Error((j&&j.error&&j.error.message)||('Spotify error '+r.status));e.status=r.status;e.reason=j&&j.error&&j.error.reason;throw e}
@@ -838,15 +839,18 @@ async function runSearch(){
   $('#sline').classList.add('busy');
   try{
     // Spotify now returns at most 10 results per request, so ask for several pages at once
-    const page=(type,offset)=>api('/search',{query:{q,type,limit:10,offset}}).catch(e=>{if(offset===0)throw e;return null});
-    const [first,t2,t3,a2]=await Promise.all([page('track,album',0),page('track',10),page('track',20),page('album',10)]);
+    const first=await api('/search',{query:{q,type:'track,album',limit:10}});
     if(seq!==sSeq)return;
-    const tracks=uniq([].concat(items(first,'tracks'),items(t2,'tracks'),items(t3,'tracks')));
-    const albums=uniq([].concat(items(first,'albums'),items(a2,'albums')));
-    const total=(first&&first.tracks&&first.tracks.total)||tracks.length;
-    sMore={q,offset:30,total,busy:false};
-    renderResults({tracks:{items:tracks},albums:{items:albums}},q);
-  }catch(e){if(seq===sSeq&&!e.auth)toast(e.message)}
+    const total=(first&&first.tracks&&first.tracks.total)||0;
+    sMore={q,offset:10,total,busy:false};
+    renderResults({tracks:{items:uniq(items(first,'tracks'))},albums:{items:uniq(items(first,'albums'))}},q);
+    // quietly add two more pages of songs, one after the other
+    for(let i=0;i<2&&seq===sSeq;i++){
+      await sleep(250);if(seq!==sSeq)return;
+      const btn=$('#sres .more-btn');if(!btn)break;
+      await moreSongs(btn,btn.parentNode,true);
+    }
+  }catch(e){if(seq===sSeq&&!e.auth)toast(e.status>=500?'Spotify is busy right now, try again in a moment':e.message)}
   finally{if(seq===sSeq)$('#sline').classList.remove('busy')}
 }
 let sMore=null,songNo=0;
@@ -859,7 +863,7 @@ function songRow(t,q,k){
   b.append(el('span','no',num(++songNo)),im2,tx2,el('span','d',fmt(t.duration_ms)));
   b.onclick=()=>playTrack(t,q);return b;
 }
-async function moreSongs(btn,list){
+async function moreSongs(btn,list,quiet){
   if(!sMore||sMore.busy)return;
   const m=sMore;m.busy=true;btn.textContent='Loading';
   try{
@@ -868,9 +872,9 @@ async function moreSongs(btn,list){
     const have=new Set(Array.from(list.querySelectorAll('.srow')).map(x=>x.dataset.id));
     const got=items(r,'tracks').filter(t=>!have.has(t.id));
     m.offset+=10;
-    got.forEach((t,i)=>list.insertBefore(songRow(t,m.q,i),btn));
+    got.forEach((t,i)=>list.insertBefore(songRow(t,m.q,quiet?0:i),btn));
     if(!items(r,'tracks').length||m.offset>=m.total||m.offset>=200)btn.remove();else btn.textContent='More songs';
-  }catch(e){btn.textContent='More songs';if(!e.auth)toast(e.message)}
+  }catch(e){btn.textContent='More songs';if(!e.auth&&!quiet)toast(e.status>=500?'Spotify is busy, try again in a moment':e.message)}
   finally{m.busy=false}
 }
 function playTrack(t,q){addRecent(q);closeSheet('search');playBody(t.album?{context_uri:t.album.uri,offset:{uri:t.uri}}:{uris:[t.uri]})}
@@ -980,7 +984,7 @@ function wire(){
   $('#openSettings').onclick=()=>openSheet('settings');
   $$('[data-closebtn]').forEach(b=>b.onclick=()=>closeSheet(b.dataset.closebtn));
   dragToClose($('#album'),$('#album .grab'),'y');
-  $('#q').addEventListener('input',()=>{clearTimeout(sT);sT=setTimeout(runSearch,280)});
+  $('#q').addEventListener('input',()=>{clearTimeout(sT);sT=setTimeout(runSearch,450)});
   $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();clearTimeout(sT);if(topAction&&sSeq&&$('#q').value.trim())topAction();else runSearch();$('#q').blur()}});
   $('#wakeRetry').onclick=async()=>{const d=await ensureDevice().catch(()=>null);if(d){playBody(state.pendingPlay&&state.pendingPlay.body,true)}else toast('Still asleep. Open Spotify and play anything for a second.')};
   $('#wakeClose').onclick=()=>{hideWake();state.pendingPlay=null};
