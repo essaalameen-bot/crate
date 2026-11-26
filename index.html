@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>window.__CFG={clientId:"__CLIENT_ID__"};</script>
+<script>window.__CFG={clientId:"b508dfe00cfa4d0faf701d08d62300f8"};</script>
 <style>
 :root{
   --bg:#f4f2ed;--ink:#161616;--muted:#66635d;--line:rgba(22,22,22,.14);--sheet:#f4f2ed;--chip:rgba(22,22,22,.06);
@@ -834,6 +834,7 @@ function wire(){
   $$('#segTheme button').forEach(b=>b.onclick=()=>setPref('dark',b.dataset.v==='dark'));
   $$('#segVideo button').forEach(b=>b.onclick=()=>setPref('video',b.dataset.v==='on'));
   $('#logout').onclick=()=>{LS.del('crate_tokens');closeSheet('settings');location.reload()};
+  if(window.__CFG.clientId.indexOf('__')!==0)$('#changeCid').style.display='none';
   $('#changeCid').onclick=()=>{LS.del('crate_client_id');LS.del('crate_tokens');closeSheet('settings');$('#cidInput').value='';show('setup')};
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){const last=Array.from(state.sheets).pop();if(last)closeSheet(last)}else if(e.key===' '&&!state.sheets.size&&document.activeElement.tagName!=='INPUT'&&$('#player').classList.contains('active')){e.preventDefault();togglePlay()}});
 
