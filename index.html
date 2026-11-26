@@ -203,6 +203,7 @@ body:not(.video-off) .s-line::after{background:linear-gradient(90deg,transparent
 .recent-w{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 0;border-bottom:1px solid var(--line);text-align:left;font-family:var(--tf);font-style:var(--ts);font-weight:var(--tw);letter-spacing:var(--tt);font-size:calc(30px * var(--tsz));line-height:1.1;transition:opacity .2s,transform .25s var(--E)}
 .recent-w:active{opacity:.6;transform:translateX(4px)}
 .recent-w svg{width:16px;height:16px;flex:none;color:var(--muted)}
+.more-btn{width:100%;margin-top:16px;border-color:var(--line)}
 .empty-note{margin-top:30px;font-size:12px;color:var(--muted);line-height:1.6}
 
 /* settings */
@@ -655,10 +656,23 @@ async function openAlbum(id){
   const sh=$('#album');
   if(!state.albumCache[id]){
     sh.classList.add('loading');
-    try{state.albumCache[id]=await api('/albums/'+id)}catch(e){sh.classList.remove('loading');if(!e.auth)toast(e.status===404?'That one is not an album':e.message);return}
+    try{const a=await api('/albums/'+id);await fillAlbumTracks(a);state.albumCache[id]=a}catch(e){sh.classList.remove('loading');if(!e.auth)toast(e.status===404?'That one is not an album':e.message);return}
     sh.classList.remove('loading');
   }
   if(state.openAlbumId===id)renderAlbum(state.albumCache[id]);
+}
+// Spotify may send only part of an album's track list; fetch the rest page by page
+async function fillAlbumTracks(a){
+  if(!a.tracks)a.tracks={items:[]};
+  const items=a.tracks.items||(a.tracks.items=[]);
+  const total=a.tracks.total||a.total_tracks||items.length;
+  let limit=50,guard=0;
+  while(items.length<total&&guard++<30){
+    try{
+      const p=await api('/albums/'+a.id+'/tracks',{query:{limit,offset:items.length}});
+      const got=(p&&p.items)||[];if(!got.length)break;items.push(...got);
+    }catch(e){if(e.status===400&&limit>10){limit=10;continue}break}
+  }
 }
 function renderAlbum(a){
   $('#albName').textContent=a.name;
@@ -713,10 +727,41 @@ async function runSearch(){
   if(!q){$('#sline').classList.remove('busy');return renderSearchEmpty()}
   $('#sline').classList.add('busy');
   try{
-    const r=await api('/search',{query:{q,type:'track,album',limit:10}});
-    if(seq!==sSeq)return;renderResults(r,q);
+    // Spotify now returns at most 10 results per request, so ask for several pages at once
+    const page=(type,offset)=>api('/search',{query:{q,type,limit:10,offset}}).catch(e=>{if(offset===0)throw e;return null});
+    const [first,t2,t3,a2]=await Promise.all([page('track,album',0),page('track',10),page('track',20),page('album',10)]);
+    if(seq!==sSeq)return;
+    const tracks=uniq([].concat(items(first,'tracks'),items(t2,'tracks'),items(t3,'tracks')));
+    const albums=uniq([].concat(items(first,'albums'),items(a2,'albums')));
+    const total=(first&&first.tracks&&first.tracks.total)||tracks.length;
+    sMore={q,offset:30,total,busy:false};
+    renderResults({tracks:{items:tracks},albums:{items:albums}},q);
   }catch(e){if(seq===sSeq&&!e.auth)toast(e.message)}
   finally{if(seq===sSeq)$('#sline').classList.remove('busy')}
+}
+let sMore=null,songNo=0;
+function items(r,key){return (r&&r[key]&&r[key].items||[]).filter(Boolean)}
+function uniq(list){const seen=new Set();return list.filter(x=>x&&x.id&&!seen.has(x.id)&&seen.add(x.id))}
+function songRow(t,q,k){
+  const b=el('button','srow rise');b.style.setProperty('--i',k);if(t.id===state.trackId)b.classList.add('playing');b.dataset.id=t.id;
+  const im2=el('img');im2.src=imgOf(t.album&&t.album.images,60);im2.alt='';im2.loading='lazy';
+  const tx2=el('span','tx');tx2.append(el('span','n',t.name),el('span','s',artists(t.artists)+(t.album?' · '+t.album.name:'')));
+  b.append(el('span','no',pad(++songNo)),im2,tx2,el('span','d',fmt(t.duration_ms)));
+  b.onclick=()=>playTrack(t,q);return b;
+}
+async function moreSongs(btn,list){
+  if(!sMore||sMore.busy)return;
+  const m=sMore;m.busy=true;btn.textContent='Loading';
+  try{
+    const r=await api('/search',{query:{q:m.q,type:'track',limit:10,offset:m.offset}});
+    if(sMore!==m)return;
+    const have=new Set(Array.from(list.querySelectorAll('.srow')).map(x=>x.dataset.id));
+    const got=items(r,'tracks').filter(t=>!have.has(t.id));
+    m.offset+=10;
+    got.forEach((t,i)=>list.insertBefore(songRow(t,m.q,i),btn));
+    if(!items(r,'tracks').length||m.offset>=m.total||m.offset>=200)btn.remove();else btn.textContent='More songs';
+  }catch(e){btn.textContent='More songs';if(!e.auth)toast(e.message)}
+  finally{m.busy=false}
 }
 function playTrack(t,q){addRecent(q);closeSheet('search');playBody(t.album?{context_uri:t.album.uri,offset:{uri:t.uri}}:{uris:[t.uri]})}
 function openFromSearch(a,q){addRecent(q);closeSheet('search');setTimeout(()=>openAlbum(a.id),280)}
@@ -741,15 +786,14 @@ function renderResults(r,q){
   searchBg(imgOf(imgs,60));
   // songs
   const rest=tracks.filter(t=>!(top.kind==='song'&&t.id===top.t.id));
+  songNo=0;
   if(rest.length){
     const s2=sec('Songs',k++);
-    rest.forEach((t,i)=>{
-      const b=el('button','srow rise');b.style.setProperty('--i',k++);if(t.id===state.trackId)b.classList.add('playing');
-      const im2=el('img');im2.src=imgOf(t.album&&t.album.images,60);im2.alt='';im2.loading='lazy';
-      const tx2=el('span','tx');tx2.append(el('span','n',t.name),el('span','s',artists(t.artists)));
-      b.append(el('span','no',pad(i+1)),im2,tx2,el('span','d',fmt(t.duration_ms)));
-      b.onclick=()=>playTrack(t,q);s2.appendChild(b);
-    });
+    rest.forEach(t=>s2.appendChild(songRow(t,q,Math.min(k++,14))));
+    if(sMore&&sMore.offset<sMore.total){
+      const more=el('button','btn more-btn rise','More songs');more.style.setProperty('--i',Math.min(k++,14));
+      more.onclick=()=>moreSongs(more,s2);s2.appendChild(more);
+    }
     box.appendChild(s2);
   }
   // albums
